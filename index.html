@@ -33,8 +33,9 @@
 :root[data-theme="dark"]{color-scheme:light}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
-html{background:var(--bg);padding-top:env(safe-area-inset-top,0px);-webkit-tap-highlight-color:transparent}
+html{background:var(--bg);-webkit-tap-highlight-color:transparent}
 body{margin:0}
+html,body{overflow-x:clip}
 img{max-width:100%}
 body{background:radial-gradient(900px 520px at 0% -8%, #E2E4FF 0, transparent 60%), radial-gradient(700px 500px at 100% 0%, #EFE6FF 0, transparent 55%), var(--bg);
   color:var(--ink);font-family:var(--f);font-size:14px;line-height:1.45;font-variant-numeric:tabular-nums;min-height:100%}
@@ -47,8 +48,16 @@ svg.i{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.9;stro
 .app{max-width:560px;margin:0 auto;padding-inline:16px;padding-block:0 120px}
 
 /* top bar */
-.topbar{position:sticky;top:env(safe-area-inset-top,0px);z-index:8;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;padding-block:14px 10px;
-  background:linear-gradient(var(--bg) 70%, transparent)}
+/* iOS-style frosted bar: clear at the top of the page; once content scrolls under it a fixed frosted layer
+   (same height as the bar) fades in behind it with a hairline */
+.topbar{position:sticky;top:0;z-index:8;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;
+  padding-block:calc(env(safe-area-inset-top,0px) + 14px) 10px}
+.topglass{position:fixed;left:0;right:0;top:0;height:var(--tbh,70px);z-index:7;pointer-events:none;opacity:0;transition:opacity .25s ease;
+  background:rgba(242,243,252,.72);-webkit-backdrop-filter:saturate(180%) blur(24px);backdrop-filter:saturate(180%) blur(24px);
+  border-bottom:.5px solid rgba(28,30,58,.10);box-shadow:inset 0 -1px 0 rgba(255,255,255,.55), 0 6px 20px rgba(76,80,170,.06)}
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){ .topglass{background:rgba(242,243,252,.97)} }
+body.scrolled .topglass{opacity:1}
+body.scrolled .topbar .monthnav{background:rgba(255,255,255,.72);box-shadow:0 0 0 .5px rgba(28,30,58,.06), 0 4px 14px rgba(76,80,170,.08)}
 .tt small{display:block;color:var(--muted);font-size:12.5px;font-weight:500}
 .tt h1{font-size:19px;font-weight:700;letter-spacing:-.01em}
 .monthnav{display:flex;align-items:center;gap:0;background:var(--surface);border-radius:999px;padding:3px;box-shadow:var(--shadow);flex:none}
@@ -2814,6 +2823,11 @@ function syncLabel(){
   showNotice(online || !onlineSeen ? "" : "Sedang offline. Catatan baru tetap tercatat dan terkirim otomatis begitu online lagi. Jangan tutup aplikasi sampai tersambung.");
 }
 
+{ const tb = document.querySelector(".topbar"), gl = document.createElement("div"); gl.className = "topglass"; document.body.prepend(gl);
+  const size = ()=>document.documentElement.style.setProperty("--tbh", tb.offsetHeight + "px");
+  const onScroll = ()=>document.body.classList.toggle("scrolled", window.scrollY > 4);
+  if (window.ResizeObserver) new ResizeObserver(size).observe(tb); size();
+  window.addEventListener("scroll", onScroll, { passive:true }); onScroll(); }
 const h0 = (location.hash||"").slice(1);
 go(["beranda","transaksi","anggaran","tabungan","profil"].includes(h0) ? h0 : "beranda");
 (function boot(){
