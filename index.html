@@ -234,7 +234,7 @@ body.scrolled .topbar .monthnav{background:rgba(255,255,255,.72);box-shadow:0 0 
 .pcard.new{border:2px dashed #D3D5F0;background:rgba(255,255,255,.5);box-shadow:none;place-content:center;justify-items:center;color:var(--primary);font-weight:700;min-height:170px;gap:6px}
 .pcard.new .ic{background:var(--primary-soft)}
 .tag{font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:999px;background:var(--primary-soft);color:var(--primary);white-space:nowrap}
-.tag.run{background:#E2F6EE;color:var(--green)} .tag.done{background:var(--sunk);color:var(--muted)}
+.tag.run{background:#E2F6EE;color:var(--green)} .tag.wait{background:#FFF1E4;color:#E8761F} .tag.no{background:#FDE8E8;color:var(--red)} .tag.done{background:var(--sunk);color:var(--muted)}
 .prow{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:12px 2px;border:0;border-bottom:1px solid var(--line);background:none;width:100%;text-align:left}
 .prow:last-child{border-bottom:0}
 .prow .mid{display:grid;gap:5px;min-width:0}
@@ -502,6 +502,7 @@ button.wallet.spin svg{animation:spin 1s linear infinite}
     </section>
 
     <div id="homePull" hidden></div>
+    <div id="homeReq" hidden></div>
 
     <button type="button" class="reportbtn" data-report><span class="ic solid" style="--c:var(--primary)"><svg class="i" viewBox="0 0 24 24"><path d="M12 3v9h9"/><path d="M20.5 15A9 9 0 1 1 9 3.5"/></svg></span><span><b id="reportLbl">Laporan bulan ini</b></span><svg class="i chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>
 
@@ -561,6 +562,11 @@ button.wallet.spin svg{animation:spin 1s linear infinite}
     <section class="sec">
       <div class="sec-h"><h2>Kategori</h2><button class="link" id="addCatBudget">+ Atur</button></div>
       <div class="card" id="cats" style="gap:0"></div>
+    </section>
+
+    <section class="sec" id="pengajuan">
+      <div class="sec-h"><h2>Pengajuan</h2><button class="link" id="addReq">+ Ajukan</button></div>
+      <div class="card" id="reqList" style="gap:0"></div>
     </section>
 
     <section class="sec" id="rencana">
@@ -699,7 +705,10 @@ button.wallet.spin svg{animation:spin 1s linear infinite}
 (() => {
 const CATS = ["Belanja mingguan","Makan di luar","Transport & bensin","Anak & sekolah","Kesehatan","Rumah tangga","Sosial & hadiah","Lainnya"];
 const INC_CATS = ["Gaji","Usaha / sampingan","Bonus","Lainnya"];
-const GROC = "Belanja mingguan", BILLCAT = "Tagihan tetap";
+const GROC = "Belanja mingguan", BILLCAT = "Tagihan tetap", REQCAT = "Pengajuan";
+/* budget requests (data/requests): a member asks, another member approves; an approved request adds to that month's budget */
+const reqAmt = r => Number(r.approvedAmount ?? r.amount) || 0;
+const REQ_ST = { pending:["Menunggu","wait"], approved:["Disetujui","run"], rejected:["Ditolak","no"] };
 const BUDGETABLE = CATS.filter(c=>c!==GROC);
 const BULAN = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
 const HARI = ["Minggu","Senin","Selasa","Rabu","Kamis","Jumat","Sabtu"];
@@ -785,7 +794,7 @@ const ico = (k, cls="i") => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden
 document.querySelectorAll(".set .ic").forEach(el=>{ const m = el.textContent.match(/ICON_(\w+)/); if (m) el.innerHTML = ico({WALLET:"wallet",CAL:"cal",CART:"cart",RECEIPT:"receipt",PIE:"pie",USER:"user"}[m[1]]); });
 
 const CAT_STYLE = {
-  [BILLCAT]:["receipt","#5A5CF0"], [GROC]:["cart","#8B5CF6"], "Makan di luar":["food","#FF8A3D"],
+  [BILLCAT]:["receipt","#5A5CF0"], [GROC]:["cart","#8B5CF6"], [REQCAT]:["doc","#0EA5E9"], "Makan di luar":["food","#FF8A3D"],
   "Transport & bensin":["car","#3B82F6"], "Anak & sekolah":["school","#14B8A6"], "Kesehatan":["heart","#EB4747"],
   "Rumah tangga":["tool","#F5B82E"], "Sosial & hadiah":["gift","#EC4899"], "Lainnya":["dots","#9CA3AF"],
   "Gaji":["wallet","#1FAE78"], "Usaha / sampingan":["wallet","#14B8A6"], "Bonus":["gift","#F5B82E"]
@@ -821,6 +830,10 @@ function itemGuess(name){
   if (/penginapan|hotel|villa|homestay|kamar|resort/.test(n)) return "bed";
   if (/makan|konsumsi|kuliner|catering/.test(n)) return "food";
   if (/kopi|cafe|kafe|jajan/.test(n)) return "coffee";
+  if (/\bhp\b|handphone|ponsel|iphone|samsung|smartphone/.test(n)) return "phone";
+  if (/laptop|komputer|\bpc\b|macbook|ipad|tablet/.test(n)) return "laptop";
+  if (/\btv\b|televisi/.test(n)) return "tv";
+  if (/sofa|kasur|lemari|meja|kursi|furnitur/.test(n)) return "sofa";
   if (/tiket|wisata|masuk|tour/.test(n)) return "ticket";
   if (/oleh|souvenir|hadiah|kado/.test(n)) return "gift";
   if (/belanja|shopping/.test(n)) return "bag";
@@ -877,7 +890,7 @@ const ymOf = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}`;
 let ym = ymOf(today);
 let screen = "beranda", txFilter = "all", txQuery = "";
 
-const S = { bills:[], billsRaw:[], month:{}, prevMonth:{}, tx:[], txAll:[], settings:{}, plans:[], planTx:[], family:{ meta:{}, members:{} }, myFamilies:[], famNames:{} };
+const S = { requests:[], bills:[], billsRaw:[], month:{}, prevMonth:{}, tx:[], txAll:[], settings:{}, plans:[], planTx:[], family:{ meta:{}, members:{} }, myFamilies:[], famNames:{} };
 function setTxAll(list){ S.txAll = list; S.tx = list.filter(t=>t.month===ym); }
 let db = null, auth = null, canWrite = true, mode = "connecting", currentUser = null;
 let FID = null, ROOT = null, ME = null;                 // current family, its data path, my email key
@@ -1075,17 +1088,19 @@ function calc(){
   const exp = S.tx.filter(t=>t.type!=="inc");
   const txInc = S.tx.filter(t=>t.type==="inc").reduce((a,t)=>a+t.amount,0);
   const grocBudget = bud ? Number(bud.groc)||0 : 0;
-  const byCat = {}; exp.forEach(t=>{ byCat[t.category]=(byCat[t.category]||0)+t.amount; });
+  const byCat = {}; exp.forEach(t=>{ if (t.req) return; byCat[t.category]=(byCat[t.category]||0)+t.amount; });   // request purchases count against the request
+  const reqBudget = S.requests.filter(r=>r.status==="approved" && r.month===ym).reduce((a,r)=>a+reqAmt(r),0);
+  const reqSpent = exp.filter(t=>t.req).reduce((a,t)=>a+t.amount,0);
   const grocSpent = byCat[GROC]||0;
   const catBudgets = budCats(bud);
   const otherBudget = BUDGETABLE.reduce((a,k)=>a+(Number(catBudgets[k])||0),0);
   const otherCommitted = BUDGETABLE.reduce((a,k)=>a+Math.max(Number(catBudgets[k])||0, byCat[k]||0),0);
   const income = incomeBase() + txInc;
   const spent = paidTotal + exp.reduce((a,t)=>a+t.amount,0);
-  const plan = billsTotal + grocBudget + otherBudget;
+  const plan = billsTotal + grocBudget + otherBudget + reqBudget;
   const savedMonth = S.planTx.filter(t=>t.type==="save" && t.month===ym).reduce((a,t)=>a+t.amount,0);
-  const projected = income - savedMonth - (paidTotal + (billsTotal - paidPlan) + Math.max(grocBudget, grocSpent) + otherCommitted);
-  return { bud, hasBudget: !!bud || (mode==='cloud' && !S._monthLoaded), info, paid, billsTotal, paidTotal, paidPlan, grocBudget, grocSpent, byCat, catBudgets, income, spent, plan, projected, exp, savedMonth };
+  const projected = income - savedMonth - (paidTotal + (billsTotal - paidPlan) + Math.max(grocBudget, grocSpent) + otherCommitted + Math.max(reqBudget, reqSpent));
+  return { reqBudget, reqSpent, bud, hasBudget: !!bud || (mode==='cloud' && !S._monthLoaded), info, paid, billsTotal, paidTotal, paidPlan, grocBudget, grocSpent, byCat, catBudgets, income, spent, plan, projected, exp, savedMonth };
 }
 function dayData(iso, c){
   const days = monthInfo(ym).days, inMonth = iso.slice(0,7)===ym, d = +iso.slice(8,10);
@@ -1172,7 +1187,7 @@ function billRow(b, c, detailed){
 /* spending for a set of dates, across loaded months: transactions + bill payments */
 function spendIn(isoTest){
   const by = {};
-  S.txAll.forEach(t=>{ if (t.type!=="inc" && isoTest(t.date)) by[t.category]=(by[t.category]||0)+t.amount; });
+  S.txAll.forEach(t=>{ if (t.type!=="inc" && isoTest(t.date)){ const k = t.req ? REQCAT : t.category; by[k]=(by[k]||0)+t.amount; } });
   [S.month.paid||{}, S.prevMonth.paid||{}].forEach(paid=>Object.values(paid).forEach(v=>{
     const d = paidDateOf(v); if (d && isoTest(d)) by[BILLCAT]=(by[BILLCAT]||0)+realOf(v); }));
   return by;
@@ -1203,11 +1218,11 @@ function overviewData(c){
     return { by: spendIn(d=>w.isos.includes(d)), label:`minggu ${w.label}` };
   }
   if (ovPeriod==="prev"){
-    const by = {}; S.txAll.forEach(t=>{ if (t.type!=="inc" && t.month===prevYm) by[t.category]=(by[t.category]||0)+t.amount; });
+    const by = {}; S.txAll.forEach(t=>{ if (t.type!=="inc" && t.month===prevYm){ const k = t.req ? REQCAT : t.category; by[k]=(by[k]||0)+t.amount; } });
     const pb = Object.values(S.prevMonth.paid||{}).reduce((a,v)=>a+realOf(v),0); if (pb) by[BILLCAT]=pb;
     return { by, label: monthInfo(prevYm).label };
   }
-  const by = {...c.byCat}; if (c.paidTotal) by[BILLCAT]=c.paidTotal;
+  const by = {...c.byCat}; if (c.paidTotal) by[BILLCAT]=c.paidTotal; if (c.reqSpent) by[REQCAT]=c.reqSpent;
   return { by, label: c.info.label };
 }
 function donutHtml(c){
@@ -1250,6 +1265,7 @@ function weekNow(c){
 }
 
 function renderHome(c){
+  renderHomeReq();
   const hp = $("homePull"); hp.hidden = c.hasBudget;
   if (!c.hasBudget) hp.innerHTML = `<button type="button" class="pullcard" ${canWrite?"data-pull":'data-go="anggaran"'}>${icon(["cal","var(--primary)"])}<span><b>Anggaran ${esc(BULAN[c.info.m-1])} belum ada</b><small>Tarik dari bulan lain atau template</small></span>${canWrite?`<span class="go">Tarik</span>`:""}</button>`;
   const left = c.income - c.spent - c.savedMonth;
@@ -1386,7 +1402,7 @@ function renderBudgetPie(c){
   const sec = $("porsiSec"); sec.hidden = !(c.hasBudget && c.plan > 0); if (sec.hidden) return;
   let rows;
   if (pieMode==="bill") rows = S.bills.filter(b=>b.amount>0).map((b,i)=>({ n:b.name, v:b.amount, c:PIE_COLORS[i % PIE_COLORS.length] }));
-  else rows = [[BILLCAT, c.billsTotal], [GROC, c.grocBudget], ...BUDGETABLE.map(k=>[k, Number(c.catBudgets[k])||0])]
+  else rows = [[BILLCAT, c.billsTotal], [GROC, c.grocBudget], [REQCAT, c.reqBudget], ...BUDGETABLE.map(k=>[k, Number(c.catBudgets[k])||0])]
     .filter(r=>r[1]>0).map(([k,v])=>({ n:k, v, c:catStyle(k)[1] }));
   rows.sort((a,b)=>b.v-a.v);
   const total = rows.reduce((a,r)=>a+r.v,0), free = c.income - c.plan;
@@ -1397,6 +1413,7 @@ function renderBudgetPie(c){
 document.addEventListener("click", e=>{ const b = e.target.closest("[data-pie]"); if (b){ pieMode = b.dataset.pie; render(); } });
 function renderBudgetRest(c){
   renderBudgetPie(c);
+  renderReqList();
   // calendar
   const {m:cm} = c.info, dayNow = dayNowOf();
   const wk = weeksOf(ym).map(w=>({...w, spent: S.txAll.filter(t=>t.type!=="inc" && t.category===GROC && w.isos.includes(t.date)).reduce((a,t)=>a+t.amount,0)}));
@@ -1419,6 +1436,7 @@ function renderBudgetRest(c){
   const rows = [
     { key:BILLCAT, spent:c.paidTotal, budget:c.billsTotal, sub:`${rp(c.paidTotal)} / ${rp(c.billsTotal)}`, act:"bills" },
     { key:GROC, spent:c.grocSpent, budget:c.grocBudget, sub:`${rp(c.grocSpent)} / ${rp(c.grocBudget)}`, act:"groc" },
+    ...(c.reqBudget || c.reqSpent ? [{ key:REQCAT, spent:c.reqSpent, budget:c.reqBudget, sub:`${rp(c.reqSpent)} / ${rp(c.reqBudget)}`, act:"req" }] : []),
     ...BUDGETABLE.map(k=>({ key:k, spent:c.byCat[k]||0, budget:Number(c.catBudgets[k])||0 }))
       .filter(r=>r.spent||r.budget)
       .map(r=>({...r, sub: r.budget ? `${rp(r.spent)} / ${rp(r.budget)}` : `${rp(r.spent)} · belum ada batas`, act:"cat"}))
@@ -2048,24 +2066,26 @@ function openTx(preset={}, existing=null){
   let type = existing ? (existing.type==="inc"?"inc":"exp") : (preset.type || "exp");
   const dateDefault = existing ? existing.date : (preset.date || (ym===ymOf(today) ? todayISO : `${ym}-01`));
   const curCat = existing ? existing.category : preset.category;
+  const reqId = existing ? existing.req : preset.req, reqOf = reqId ? S.requests.find(r=>r.id===reqId) : null;
   const opts = list => list.map(c=>`<option${c===curCat?" selected":""}>${esc(c)}</option>`).join("");
   openSheet(existing ? "Ubah transaksi" : "Catat transaksi", `
     <div class="seg two" role="group" aria-label="Jenis">
       <button type="button" id="tExp" aria-pressed="${type==="exp"}">Pengeluaran</button>
       <button type="button" id="tInc" aria-pressed="${type==="inc"}">Pemasukan</button>
     </div>
-    ${amountField("txAmt","Jumlah", existing?String(existing.amount):"", [50000,100000,200000,500000])}
+    ${amountField("txAmt","Jumlah", existing?String(existing.amount):(preset.amount?String(preset.amount):""), [50000,100000,200000,500000])}
     <div class="twocol">
       <div class="field"><label for="txCat">Kategori</label><select id="txCat">${opts(type==="inc"?INC_CATS:CATS)}</select></div>
       <div class="field"><label for="txDate">Tanggal</label><input type="date" id="txDate" value="${dateDefault}"></div>
     </div>
-    <div class="field"><label for="txNote">Catatan</label><input id="txNote" maxlength="80" value="${existing?esc(existing.note||""):""}" placeholder="mis. Pasar pagi, sayur dan ikan"></div>
-    ${!existing && S.plans.some(p=>!p.done) ? `<div class="forplan" id="forPlan"><label class="muted" style="font-size:12px;font-weight:600">Untuk rencana khusus?</label><div class="typechips">${S.plans.filter(p=>!p.done).sort(sortPlans).map(p=>`<button type="button" data-txplan="${esc(p.id)}">${ico(planVis(p)[0])}${esc(p.name)}</button>`).join("")}</div></div>` : ""}
+    <div class="field"><label for="txNote">Catatan</label><input id="txNote" maxlength="80" value="${existing?esc(existing.note||""):esc(preset.note||"")}" placeholder="mis. Pasar pagi, sayur dan ikan"></div>
+    ${reqOf ? `<div class="advice">Untuk pengajuan <b>${esc(reqOf.title)}</b></div>` : ""}
+    ${!existing && !reqOf && S.plans.some(p=>!p.done) ? `<div class="forplan" id="forPlan"><label class="muted" style="font-size:12px;font-weight:600">Untuk rencana khusus?</label><div class="typechips">${S.plans.filter(p=>!p.done).sort(sortPlans).map(p=>`<button type="button" data-txplan="${esc(p.id)}">${ico(planVis(p)[0])}${esc(p.name)}</button>`).join("")}</div></div>` : ""}
     <div class="actions"><button type="submit" class="btn primary">Simpan</button>${existing?`<button type="button" class="btn danger" id="txDel">Hapus transaksi</button>`:""}</div>
   `, async ()=>{
     const amount = readAmount("txAmt"); if (!amount) return false;
     const date = $("txDate").value || dateDefault;
-    await saveTx(existing?existing.id:null, { type, amount, category:$("txCat").value, date, month:date.slice(0,7), note:$("txNote").value.trim(), created: existing?.created || Date.now() });
+    await saveTx(existing?existing.id:null, { type, amount, category:$("txCat").value, date, month:date.slice(0,7), note:$("txNote").value.trim(), created: existing?.created || Date.now(), ...(reqId && type==="exp" ? { req:reqId } : {}) });
     toast(existing ? "Transaksi diperbarui" : (date.slice(0,7)===ym ? "Tersimpan" : `Tersimpan di ${monthInfo(date.slice(0,7)).label}`));
   }, existing ? null : "txAmt");
   wireAmount("txAmt");
@@ -2241,10 +2261,11 @@ function openReport(){
   const mrows = [];
   if (c.paidTotal) mrows.push([BILLCAT, c.paidTotal, catStyle(BILLCAT)]);
   Object.entries(c.byCat).sort((a,b)=>b[1]-a[1]).forEach(([k,v])=>mrows.push([k, v, catStyle(k)]));
+  if (c.reqSpent) mrows.push([REQCAT, c.reqSpent, catStyle(REQCAT)]);
   const prows = S.plans.map(p=>[p, planTxM.filter(t=>t.planId===p.id && t.type==="exp").reduce((a,t)=>a+t.amount,0)]).filter(r=>r[1]>0).sort((a,b)=>b[1]-a[1]);
   const totalOut = c.spent + planExp;
   /* right-hand % = used of its budget (same as Anggaran); share of total spending goes in the small line */
-  const budOf = k => k===BILLCAT ? c.billsTotal : k===GROC ? c.grocBudget : Number(c.catBudgets[k])||0;
+  const budOf = k => k===BILLCAT ? c.billsTotal : k===GROC ? c.grocBudget : k===REQCAT ? c.reqBudget : Number(c.catBudgets[k])||0;
   const catRow = (ic, name, v, budget) => { const share = totalOut ? Math.round(v/totalOut*100) : 0;
     return `<div class="cat" style="cursor:default">${ic}<span class="mid"><b>${esc(name)}</b>${budget ? barHtml(v, budget, true) : `<div class="bar thin"><i style="width:0"></i></div>`}<small>${rp(v)}${budget?` / ${rp(budget)}`:""} · ${share}% dari total</small></span><span class="pct ${budget && v>budget?"up":""}">${budget?Math.round(v/budget*100)+"%":"—"}</span></div>`; };
   const list = all.filter(e => reportFilter==="all" ? true : reportFilter==="plan" ? e.kind==="plan" : e.kind!=="plan");
@@ -2492,6 +2513,139 @@ async function maybeMigrateBudget(){
     await rdb.ref().update(upd);
   } catch(e){ onDbErr(e); budMigrating = false; }
 }
+/* ---------- budget requests ---------- */
+const reqIcon = r => ICONS[r.icon] || catStyle(r.category);
+const reqOthers = () => Object.keys(S.family.members||{}).filter(ek=>ek!==ME);
+const canDecide = r => canWrite && r.status==="pending" && r.by!==ME;
+const reqSpentOf = id => S.txAll.filter(t=>t.req===id && t.type!=="inc").reduce((a,t)=>a+t.amount,0);
+const reqWho = ek => ek===ME ? "Anda" : (memberName(ek)||"").split("@")[0].split(" ")[0];
+const reqMonthLbl = m => { const i = monthInfo(m); return BULAN[i.m-1] + (i.y!==today.getFullYear() ? " "+i.y : ""); };
+const reqSort = (a,b)=> (a.status==="pending"?0:1)-(b.status==="pending"?0:1) || (b.created||0)-(a.created||0);
+function reqSeen(){ try { return new Set(JSON.parse(lsGet("kas-reqseen")||"[]")); } catch(e){ return new Set(); } }
+function markReqSeen(r){ const s = reqSeen(); s.add(r.id+":"+r.status); lsSet("kas-reqseen", JSON.stringify([...s].slice(-100))); }
+function reqRow(r){
+  const st = REQ_ST[r.status] || REQ_ST.pending, ok = r.status==="approved", spent = ok ? reqSpentOf(r.id) : 0;
+  const sub = ok ? `${short(spent)} / ${short(reqAmt(r))} · ${reqMonthLbl(r.month)}` : `${short(reqAmt(r))} · ${reqMonthLbl(r.month)} · ${esc(reqWho(r.by))}`;
+  return `<button type="button" class="prow" data-req="${esc(r.id)}">${icon(reqIcon(r), true)}<span class="mid"><b>${esc(r.title)}</b>${ok ? barHtml(spent, reqAmt(r), true) : ""}<small>${sub}</small></span><span class="tag ${st[1]}">${st[0]}</span></button>`;
+}
+function renderReqList(){
+  const sec = $("pengajuan"); sec.hidden = isPersonal() && !S.requests.length; if (sec.hidden) return;
+  const list = S.requests.filter(r=>r.status==="pending" || r.month===ym).sort(reqSort);
+  const more = S.requests.length - list.length;
+  $("reqList").innerHTML = (list.map(reqRow).join("") || `<div class="empty">Belum ada pengajuan.</div>`)
+    + (more>0 ? `<button type="button" class="morebtn" data-reqall>Semua pengajuan (${S.requests.length})${ico("chev","i")}</button>` : "");
+  $("addReq").hidden = !canWrite;
+}
+function renderHomeReq(){
+  const box = $("homeReq"), mine = S.requests.filter(canDecide), seen = reqSeen();
+  const news = S.requests.filter(r=>r.by===ME && r.status!=="pending" && (r.decidedAt||0) > Date.now()-14*864e5 && !seen.has(r.id+":"+r.status));
+  if (mine.length){
+    box.innerHTML = `<button type="button" class="pullcard" ${mine.length===1?`data-req="${esc(mine[0].id)}"`:"data-reqall"}>${icon(["doc","#E8761F"])}<span><b>${mine.length} pengajuan menunggu persetujuan</b><small>${mine.slice(0,2).map(r=>esc(r.title)).join(", ")}${mine.length>2?", …":""}</small></span><span class="go">Lihat</span></button>`;
+  } else if (news.length){
+    const r = news[0], ok = r.status==="approved";
+    box.innerHTML = `<button type="button" class="pullcard" data-req="${esc(r.id)}">${icon(ok?["check","#1FAE78"]:["x","#EB4747"])}<span><b>${esc(r.title)} ${ok?"disetujui":"ditolak"}</b><small>oleh ${esc(reqWho(r.decidedBy))}${ok?` · ${short(reqAmt(r))}`:""}</small></span><span class="go">Lihat</span></button>`;
+  }
+  box.hidden = !(mine.length || news.length);
+}
+function openReqList(){
+  const list = [...S.requests].sort(reqSort).slice(0, 40);
+  openSheet("Pengajuan", `<div class="card" style="box-shadow:none;padding:0;gap:0">${list.map(reqRow).join("") || `<div class="empty">Belum ada pengajuan.</div>`}</div>
+    ${canWrite && !isPersonal() ? `<div class="actions"><button type="button" class="btn primary" id="rqNew">+ Ajukan</button></div>` : ""}`, null);
+  if ($("rqNew")) $("rqNew").onclick = ()=>openReqForm();
+}
+async function saveReq(id, data){
+  if (mode==="cloud") await write(col("requests").doc(id).set(data));
+  else { const i = S.requests.findIndex(r=>r.id===id), v = { id, ...data }; if (i>=0) S.requests[i] = v; else S.requests.push(v); render(); }
+}
+async function delReq(id){
+  if (mode!=="cloud"){ S.requests = S.requests.filter(r=>r.id!==id); S.txAll.forEach(t=>{ if (t.req===id) delete t.req; }); setTxAll(S.txAll); render(); return; }
+  const upd = { [ROOT+"/requests/"+id]: null };          // purchases go back to their own category
+  try { const ts = await col("tx").get(); ts.docs.forEach(d=>{ if (d.data().req===id) upd[ROOT+"/tx/"+d.id+"/req"] = null; }); } catch(e){}
+  await write(rdb.ref().update(upd));
+}
+function openReqForm(r, copy){
+  const src = r || copy || null, now = ymOf(today);
+  const months = [0,1,2,3].map(k=>shiftYm(now,k));
+  let month = src && src.month >= now ? src.month : (ym>=now && months.includes(ym) ? ym : now);
+  if (!months.includes(month)) months.push(month);
+  openSheet(r ? "Ubah pengajuan" : "Ajukan anggaran", `
+    <div class="field"><label for="rqTitle">Untuk apa</label><div class="namerow"><button type="button" class="icbtn" id="rqPrev" aria-label="Pilih ikon"></button><input id="rqTitle" maxlength="40" value="${src?esc(src.title):""}" placeholder="mis. HP baru"></div></div>
+    ${amountField("rqAmt","Perkiraan biaya", src?String(src.amount):"")}
+    <div class="field"><label>Untuk bulan</label><div class="typechips" id="rqMonths">${months.map(m=>`<button type="button" data-rqm="${m}" aria-pressed="${m===month}">${reqMonthLbl(m)}</button>`).join("")}</div></div>
+    <div class="field"><label for="rqCat">Kategori</label><select id="rqCat">${CATS.filter(c=>c!==GROC).map(c=>`<option${c===(src?src.category:"Lainnya")?" selected":""}>${esc(c)}</option>`).join("")}</select></div>
+    <div class="field"><label for="rqNote">Alasan</label><input id="rqNote" maxlength="120" value="${src?esc(src.note||""):""}" placeholder="mis. HP lama sering mati"></div>
+    ${!reqOthers().length ? `<div class="advice">Belum ada anggota lain yang bisa menyetujui. Tambahkan lewat Profil → Keluarga.</div>` : ""}
+    <div class="actions"><button type="submit" class="btn primary">${r?"Simpan":"Ajukan"}</button></div>
+  `, async ()=>{
+    const title = $("rqTitle").value.trim(); if (!title){ $("rqTitle").focus(); return false; }
+    const amount = readAmount("rqAmt"); if (!amount) return false;
+    const id = r ? r.id : "rq"+Date.now().toString(36);
+    await saveReq(id, clean({ title, amount, icon: pickedIcon || itemGuess(title) || "doc", category: $("rqCat").value, month, note: $("rqNote").value.trim(),
+      by: r ? r.by : ME, status: "pending", created: r ? r.created : Date.now() }));
+    toast(r ? "Pengajuan diperbarui" : "Pengajuan dikirim");
+    setTimeout(()=>openReq(id), 200);
+  }, r ? null : "rqTitle");
+  wireAmount("rqAmt");
+  let pickedIcon = src && src.icon ? src.icon : null;
+  const cur = ()=> pickedIcon || itemGuess($("rqTitle").value) || "doc";
+  const prev = ()=>{ $("rqPrev").innerHTML = iconPrev(cur()); };
+  $("rqPrev").onclick = ()=>openIconPopup(cur(), k=>{ pickedIcon = k; prev(); }, $("rqPrev"));
+  $("rqTitle").addEventListener("input", ()=>{ if (!pickedIcon) prev(); });
+  prev();
+  $("rqMonths").addEventListener("click", e=>{ const b = e.target.closest("[data-rqm]"); if (!b) return; month = b.dataset.rqm;
+    $("rqMonths").querySelectorAll("[data-rqm]").forEach(x=>x.setAttribute("aria-pressed", x===b)); });
+}
+function openReq(id){
+  const r = S.requests.find(x=>x.id===id); if (!r) return;
+  if (r.by===ME && r.status!=="pending") markReqSeen(r);
+  const st = REQ_ST[r.status] || REQ_ST.pending, ok = r.status==="approved", pend = r.status==="pending";
+  const txs = S.txAll.filter(t=>t.req===id && t.type!=="inc").sort((a,b)=>b.date.localeCompare(a.date));
+  const spent = txs.reduce((a,t)=>a+t.amount,0);
+  const fmtD = ms => { const d = new Date(ms); return `${d.getDate()} ${BLN3(d.getMonth())}`; };
+  const stat = (k,v,cls="") => `<div class="stat"><small>${k}</small><b class="${cls}">${v}</b></div>`;
+  openSheet(esc(r.title), `
+    <div class="phead">${icon(reqIcon(r), true)}<div style="min-width:0"><b>${esc(r.title)}</b><small>${esc(r.category||"")} · ${monthInfo(r.month).label}</small></div><span class="tag ${st[1]}" style="margin-left:auto">${st[0]}</span></div>
+    <div class="pstats">
+      ${stat("Diajukan", rp(r.amount))}
+      ${stat("Oleh", esc(reqWho(r.by)) + (r.created?` · ${fmtD(r.created)}`:""))}
+      ${ok ? stat("Disetujui", rp(reqAmt(r))) + stat("Sisa", rp(reqAmt(r)-spent), reqAmt(r)-spent<0?"up":"") : ""}
+    </div>
+    ${r.note ? `<div class="advice">${esc(r.note)}</div>` : ""}
+    ${!pend && r.decidedBy ? `<div class="planline"><span>${ok?"Disetujui":"Ditolak"} oleh</span><b>${esc(reqWho(r.decidedBy))}${r.decidedAt?` · ${fmtD(r.decidedAt)}`:""}</b></div>` : ""}
+    ${!pend && r.decisionNote ? `<div class="advice">${esc(r.decisionNote)}</div>` : ""}
+    ${canDecide(r) ? `
+      ${amountField("rqOk","Jumlah disetujui", String(r.amount))}
+      <div class="field"><label for="rqDN">Catatan</label><input id="rqDN" maxlength="120" placeholder="opsional"></div>
+      <div class="pbtns"><button type="button" class="btn primary" id="rqYes">Setujui</button><button type="button" class="btn danger" id="rqNo">Tolak</button></div>` : ""}
+    ${pend && r.by===ME && canWrite ? `<div class="muted" style="font-size:12.5px;text-align:center">Menunggu persetujuan ${esc(reqOthers().map(reqWho).join(", ") || "anggota lain")}</div>
+      <div class="pbtns"><button type="button" class="btn ghost" id="rqEdit">Ubah</button><button type="button" class="btn danger" id="rqCancel">Batalkan</button></div>` : ""}
+    ${ok ? `<div class="daysec">Pembelian</div><ul class="list">${txs.map(t=>`<li class="row">${icon(catStyle(t.category))}<div class="nm"><b>${esc(t.note||t.category)}</b><small>${dayLabel(t.date)}</small></div><div class="right"><span class="amt exp">−${short(t.amount)}</span></div></li>`).join("") || `<li class="empty">Belum ada pembelian.</li>`}</ul>
+      ${canWrite ? `<div class="actions"><button type="button" class="btn primary" id="rqBuy">+ Catat pembelian</button></div>` : ""}` : ""}
+    ${r.status==="rejected" && r.by===ME && canWrite ? `<div class="pbtns"><button type="button" class="btn ghost" id="rqAgain">Ajukan ulang</button><button type="button" class="btn danger" id="rqDel">Hapus</button></div>` : ""}
+    ${ok && canWrite && (r.by===ME || canManage()) ? `<div class="actions"><button type="button" class="btn danger" id="rqDel">Hapus pengajuan</button></div>` : ""}
+  `, null);
+  if (canDecide(r)){
+    wireAmount("rqOk");
+    const decide = async yes=>{
+      const amt = yes ? readAmount("rqOk") : 0; if (yes && !amt) return;
+      const { id:_i, ...body } = r;
+      const next = { ...body, status: yes ? "approved" : "rejected", decidedBy: ME, decidedAt: Date.now(), decisionNote: $("rqDN").value.trim() || undefined };
+      if (yes && amt !== r.amount) next.approvedAmount = amt; else delete next.approvedAmount;
+      try { await saveReq(r.id, clean(next)); toast(yes ? "Pengajuan disetujui" : "Pengajuan ditolak"); setTimeout(()=>openReq(r.id), 150); } catch(e){ fail(e); }
+    };
+    $("rqYes").onclick = ()=>decide(true);
+    $("rqNo").onclick = async()=>{ if (await askDelete("Tolak pengajuan?", `${eB(r.title)} sebesar ${eB(rp(r.amount))} akan ditolak.`, "Tolak")) decide(false); };
+  }
+  if ($("rqEdit")) $("rqEdit").onclick = ()=>openReqForm(r);
+  if ($("rqAgain")) $("rqAgain").onclick = ()=>openReqForm(null, r);
+  if ($("rqBuy")) $("rqBuy").onclick = ()=>openTx({ type:"exp", amount: Math.max(0, reqAmt(r)-spent) || undefined, category: r.category, note: r.title, req: r.id,
+    date: r.month===ymOf(today) ? todayISO : `${r.month}-01` });
+  const del = async (title, msg)=>{ if (!(await askDelete(title, msg))) return; try { await delReq(r.id); closeSheet(); toast("Pengajuan dihapus"); } catch(e){ fail(e); } };
+  if ($("rqCancel")) $("rqCancel").onclick = ()=>del("Batalkan pengajuan?", `${eB(r.title)} akan dihapus.`);
+  if ($("rqDel")) $("rqDel").onclick = ()=>del("Hapus pengajuan?", ok ? `${eB(r.title)} dihapus dan tidak lagi masuk anggaran ${eB(monthInfo(r.month).label)}. Catatan pembelian tetap ada.` : `${eB(r.title)} akan dihapus.`);
+}
+$("addReq").onclick = ()=>openReqForm();
+document.addEventListener("click", e=>{ const q = e.target.closest("[data-req]"); if (q){ openReq(q.dataset.req); return; } if (e.target.closest("[data-reqall]")) openReqList(); });
 function openName(){
   openSheet("Nama keluarga", `<div class="field"><label for="famName">Nama</label><input id="famName" maxlength="30" value="${esc(S.settings.familyName||"")}" placeholder="mis. Keluarga Wahyu"></div>
     <div class="actions"><button type="submit" class="btn primary">Simpan</button></div>`,
@@ -2547,7 +2701,7 @@ document.addEventListener("click", async e=>{
   if (e.target.closest("[data-newplan]")){ if (canWrite) openPlanEdit(); return; }
   const cat = e.target.closest("[data-cat]");
   if (cat){ if (!canWrite) return; const a = cat.dataset.act;
-    if (a==="bills") go("anggaran","tagihan"); else if (a==="groc") openGroc(); else openCatBudget(cat.dataset.cat); return; }
+    if (a==="bills") go("anggaran","tagihan"); else if (a==="req") openReqList(); else if (a==="groc") openGroc(); else openCatBudget(cat.dataset.cat); return; }
   const en = e.target.closest("[data-entry]");
   if (en){ const [k,id] = en.dataset.entry.split(/:(.*)/s);
     if (k==="income"){ if (canWrite) openIncomeMonth(); return; }
@@ -2712,6 +2866,7 @@ function startData(){
   rootUnsubs.push(col("savTx").onSnapshot(s=>{ S.sav.tx = s.docs.map(d=>({ id:d.id, ...d.data() })); if (screen==="tabungan") render(); }, onDbErr));
   rootUnsubs.push(col("savPrices").onSnapshot(s=>{ S.sav.prices = Object.fromEntries(s.docs.map(d=>[d.id, d.data()])); if (screen==="tabungan") render(); }, onDbErr));
   rootUnsubs.push(col("savSnaps").onSnapshot(s=>{ S.sav.snaps = Object.fromEntries(s.docs.map(d=>[d.id, d.data()])); if (screen==="tabungan") render(); }, onDbErr));
+  rootUnsubs.push(col("requests").onSnapshot(s=>{ S.requests = s.docs.map(d=>({id:d.id,...d.data()})); render(); }, onDbErr));
   rootUnsubs.push(col("bills").onSnapshot(s=>{ S.billsRaw = s.docs.map(d=>({id:d.id,...d.data()})).sort(sortBills); S._billsLoaded = true; render(); maybeMigrateBudget(); }, onDbErr));
   rootUnsubs.push(dref("settings/main").onSnapshot(s=>{ S.settings = s.exists ? s.data() : {}; S._setLoaded = true; render(); maybeMigrateBudget(); }, onDbErr));
   rootUnsubs.push(docRef(famPath("meta")).onSnapshot(s=>{ S.family.meta = s.data(); S.famNames[FID] = S.family.meta.name || S.famNames[FID]; render(); }, onDbErr));
@@ -2745,7 +2900,7 @@ function startData(){
 function stopData(){
   rootUnsubs.forEach(u=>u()); rootUnsubs = []; unsubs.forEach(u=>u()); unsubs = []; started = false;
   budMigrating = false;
-  Object.assign(S, { _setLoaded:false, _billsLoaded:false, bills:[], billsRaw:[], month:{}, prevMonth:{}, tx:[], txAll:[], settings:{}, plans:[], planTx:[], family:{ meta:{}, members:{} }, sav:{ assets:[], tx:[], prices:{}, snaps:{} } });
+  Object.assign(S, { _setLoaded:false, _billsLoaded:false, requests:[], bills:[], billsRaw:[], month:{}, prevMonth:{}, tx:[], txAll:[], settings:{}, plans:[], planTx:[], family:{ meta:{}, members:{} }, sav:{ assets:[], tx:[], prices:{}, snaps:{} } });
 }
 function openFamily(fid){
   if (fid === FID && started) return;
@@ -2858,7 +3013,7 @@ go(["beranda","transaksi","anggaran","tabungan","profil"].includes(h0) ? h0 : "b
 })();
 
 /* ---------- export / import ---------- */
-const COLLS = ["bills","settings","months","tx","savAssets","savTx","savPrices","savSnaps"];
+const COLLS = ["bills","settings","months","tx","requests","savAssets","savTx","savPrices","savSnaps"];
 $("exportBtn").onclick = async ()=>{
   if (mode!=="cloud") return toast("Buka keluarga dulu untuk ekspor data.");
   try {
@@ -2880,7 +3035,7 @@ $("importFile").onchange = async e=>{
   const ALL = [...COLLS, "plans", "plantx"];
   const counts = ALL.map(c=>[c, Object.keys(data[c]||{}).length]).filter(r=>r[1]);
   const total = counts.reduce((a,r)=>a+r[1],0); if (!total) return toast("File cadangan kosong.");
-  const names = { bills:"tagihan", settings:"pengaturan", months:"data bulan", tx:"transaksi", plans:"rencana", plantx:"catatan rencana", savAssets:"aset tabungan", savTx:"catatan tabungan", savPrices:"harga", savSnaps:"riwayat nilai" };
+  const names = { requests:"pengajuan", bills:"tagihan", settings:"pengaturan", months:"data bulan", tx:"transaksi", plans:"rencana", plantx:"catatan rencana", savAssets:"aset tabungan", savTx:"catatan tabungan", savPrices:"harga", savSnaps:"riwayat nilai" };
   if (!(await askDelete("Impor data?", `${counts.map(([c,n])=>`${eB(n)} ${names[c]}`).join(", ")} akan ditambahkan ke ${eB(S.famNames[FID]||"keluarga ini")}.`, "Impor", "primary"))) return;
   try {
     const upd = {};
