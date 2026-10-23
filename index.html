@@ -1907,7 +1907,7 @@ async function deletePlan(id){
 }
 async function setPlanMembers(id, keys){
   const p = S.plans.find(x=>x.id===id); if (!p) return;
-  const next = Object.fromEntries([...new Set([ME, ...keys])].map(k=>[k,true]));
+  const next = Object.fromEntries([...new Set([ME, ...keys])].filter(k=>k===ME || (S.family.members||{})[k]).map(k=>[k,true]));
   const upd = { [famPath("plans/"+id+"/members")]: next };
   Object.keys(next).forEach(k=>{ if (!(p.members||{})[k]) upd[famPath("planIndex/"+k+"/"+id)] = true; });
   Object.keys(p.members||{}).forEach(k=>{ if (!next[k]) upd[famPath("planIndex/"+k+"/"+id)] = null; });
@@ -2153,8 +2153,17 @@ function openPlanEdit(id){
 }
 
 const planOpenItems = new Set();
+/* people removed from the family are dropped from a plan's access (and from their plan index) */
+const planFormer = p => Object.keys(p.members||{}).filter(ek=>ek!==ME && !(S.family.members||{})[ek]);
+function cleanPlanMembers(p){
+  if (mode!=="cloud" || !canWrite || !(S.family.members||{})[ME]) return;
+  const gone = planFormer(p); if (!gone.length) return;
+  const upd = {}; gone.forEach(ek=>{ upd[famPath("plans/"+p.id+"/members/"+ek)] = null; upd[famPath("planIndex/"+ek+"/"+p.id)] = null; });
+  rdb.ref().update(upd).catch(()=>{});
+}
 function openPlan(id){
   const p = S.plans.find(x=>x.id===id); if (!p) return;
+  cleanPlanMembers(p);
   const st = planStats(p), w = planWhen(p, st);
   const fmtD = iso => { const d = new Date(iso+"T00:00:00"); return `${d.getDate()} ${BLN3(d.getMonth())} ${d.getFullYear()}`; };
   const byNewest = (a,b)=>b.date.localeCompare(a.date)||(b.created||0)-(a.created||0);
@@ -2183,7 +2192,7 @@ function openPlan(id){
     `<div class="advice">Kurang <b>${rp(st.budget-st.saved)}</b></div>`;
   openSheet("Rencana khusus", `
     <div class="phead">${planIcon(p,true)}<div style="min-width:0"><b>${esc(p.name)}</b><small>${w.range}</small></div><span style="margin-left:auto">${w.tag}</span></div>
-    <div class="access">${Object.keys(p.members||{}).map(ek=>`<span class="achip">${memberAvatar((S.family.members||{})[ek], ek)}${esc(ek===ME?"Anda":memberName(ek).split(" ")[0])}</span>`).join("")}${canWrite && !isPersonal()?`<button type="button" class="link" id="pAccess">Atur akses</button>`:""}</div>
+    <div class="access">${Object.keys(p.members||{}).filter(ek=>ek===ME || (S.family.members||{})[ek]).map(ek=>`<span class="achip">${memberAvatar((S.family.members||{})[ek], ek)}${esc(ek===ME?"Anda":memberName(ek).split(" ")[0])}</span>`).join("")}${canWrite && !isPersonal()?`<button type="button" class="link" id="pAccess">Atur akses</button>`:""}</div>
     <div class="pstats">
       <div class="stat"><small>Anggaran</small><b>${rp(st.budget)}</b></div>
       <div class="stat"><small>Terkumpul</small><b class="down">${rp(st.saved)}</b></div>
@@ -2775,7 +2784,9 @@ function openMember(ek){
   $("rMem").onclick=()=>setR("member"); $("rAdm").onclick=()=>setR("admin");
   $("mDel").onclick = async ()=>{
     if (!(await askDelete("Hapus anggota?", `${eB(m.email||keyEmail(ek))} tidak bisa lagi membuka data keluarga ini.`, "Hapus"))) return;
-    await write(rdb.ref().update({ [famPath("members/"+ek)]: null, ["userFamilies/"+ek+"/"+FID]: null }));
+    const upd = { [famPath("members/"+ek)]: null, ["userFamilies/"+ek+"/"+FID]: null };
+    S.plans.forEach(p=>{ if ((p.members||{})[ek]){ upd[famPath("plans/"+p.id+"/members/"+ek)] = null; upd[famPath("planIndex/"+ek+"/"+p.id)] = null; } });
+    await write(rdb.ref().update(upd));
     closeSheet(); toast("Anggota dihapus");
   };
 }
