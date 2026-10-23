@@ -2530,7 +2530,7 @@ function reqRow(r){
 }
 function renderReqList(){
   const sec = $("pengajuan"); sec.hidden = isPersonal() && !S.requests.length; if (sec.hidden) return;
-  const list = S.requests.filter(r=>r.status==="pending" || r.month===ym).sort(reqSort);
+  const list = S.requests.filter(r=>r.month===ym).sort(reqSort);
   const more = S.requests.length - list.length;
   $("reqList").innerHTML = (list.map(reqRow).join("") || `<div class="empty">Belum ada pengajuan.</div>`)
     + (more>0 ? `<button type="button" class="morebtn" data-reqall>Semua pengajuan (${S.requests.length})${ico("chev","i")}</button>` : "");
