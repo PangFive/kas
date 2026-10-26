@@ -353,6 +353,19 @@ body.scrolled .topbar .monthnav{background:rgba(255,255,255,.72);box-shadow:0 0 
 .btn.dangerfill{background:linear-gradient(135deg,#FF7A7A,var(--red));color:#fff;box-shadow:0 10px 20px rgba(235,71,71,.3)}
 @keyframes popIn{from{opacity:0;transform:scale(.9) translateY(8px)}to{opacity:1;transform:none}}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+/* install prompt: floating card above the bottom nav */
+.instbar{display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;align-items:center;padding:12px 8px 12px 12px;border-radius:22px;
+  background:rgba(255,255,255,.82);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);box-shadow:0 0 0 .5px rgba(28,30,58,.05), var(--shadow);animation:popIn .3s ease-out}
+.instbar .btn-s{padding:10px 16px;border-radius:999px;font-size:13px;background:linear-gradient(135deg,#3B82F6,#1D4ED8);box-shadow:0 8px 18px rgba(37,99,235,.3)}
+.instbar img{width:46px;height:46px;border-radius:13px;display:block}
+.instbar b{display:block;font-size:13.5px}
+.instbar small{display:block;font-size:12px;color:var(--muted);line-height:1.3}
+.instbar .x{border:0;background:none;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;color:var(--muted)}
+.instbar .x svg{width:16px;height:16px}
+.isteps{display:grid;gap:10px;margin:0;padding:0;list-style:none;counter-reset:st}
+.isteps li{display:grid;grid-template-columns:28px 1fr;gap:10px;align-items:center;font-size:13.5px;counter-increment:st}
+.isteps li::before{content:counter(st);width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:var(--primary-soft);color:var(--primary);font-weight:700;font-size:13px}
+.isteps svg{width:18px;height:18px;vertical-align:-4px;color:var(--primary)}
 @media (prefers-reduced-motion:reduce){.modal,.modal-scrim{animation:none}}
 
 /* bottom nav */
@@ -489,6 +502,7 @@ button.wallet.spin svg{animation:spin 1s linear infinite}
 
   <!-- BERANDA -->
   <main class="screen" data-screen="beranda">
+    <div id="instCard" hidden></div>
     <section class="balance" aria-label="Ringkasan bulan">
       <div class="bal-top">
         <div><div class="bal-lbl">Sisa uang</div><div class="bal-big" id="balLeft">Rp 0</div><div class="bal-trend" id="balTrend"></div></div>
@@ -648,6 +662,7 @@ button.wallet.spin svg{animation:spin 1s linear infinite}
     <section class="sec">
       <div class="sec-h"><h2>Akun</h2></div>
       <div class="card" style="gap:0">
+        <button class="set" id="installBtn" hidden><span class="ic solid" style="--c:var(--primary)">ICON_PHONE</span><span><b>Pasang di HP</b><small>Buka dari layar utama</small></span><svg class="i chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>
         <button class="set" id="exportBtn"><span class="ic solid" style="--c:var(--teal)"><svg class="i" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5"/><path d="M5 20h14"/></svg></span><span><b>Ekspor data</b></span><svg class="i chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>
         <button class="set" id="importBtn"><span class="ic solid" style="--c:var(--blue)"><svg class="i" viewBox="0 0 24 24"><path d="M12 15V4M7 9l5-5 5 5"/><path d="M5 20h14"/></svg></span><span><b>Impor data</b></span><svg class="i chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>
         <button class="set" id="logoutBtn"><span class="ic solid" style="--c:var(--grey)"><svg class="i" viewBox="0 0 24 24"><path d="M15 4h4v16h-4"/><path d="M10 8l-4 4 4 4M6 12h10"/></svg></span><span><b>Keluar</b><small id="userEmail">—</small></span><svg class="i chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>
@@ -792,7 +807,7 @@ const P = {
   trash:'<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>'
 };
 const ico = (k, cls="i") => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true">${P[k]||P.receipt}</svg>`;
-document.querySelectorAll(".set .ic").forEach(el=>{ const m = el.textContent.match(/ICON_(\w+)/); if (m) el.innerHTML = ico({WALLET:"wallet",CAL:"cal",CART:"cart",RECEIPT:"receipt",PIE:"pie",USER:"user"}[m[1]]); });
+document.querySelectorAll(".set .ic").forEach(el=>{ const m = el.textContent.match(/ICON_(\w+)/); if (m) el.innerHTML = ico({PHONE:"phone",WALLET:"wallet",CAL:"cal",CART:"cart",RECEIPT:"receipt",PIE:"pie",USER:"user"}[m[1]]); });
 
 const CAT_STYLE = {
   [BILLCAT]:["receipt","#5A5CF0"], [GROC]:["cart","#8B5CF6"], [REQCAT]:["doc","#0EA5E9"], "Makan di luar":["food","#FF8A3D"],
@@ -1156,6 +1171,7 @@ function render(){
   document.querySelectorAll("[data-needs-write]").forEach(el=>el.hidden=!canWrite);
   ["fab","addBill","addCatBudget","setGroc","addPlan"].forEach(id=>{ const el=$(id); if(el) el.hidden=!canWrite; });
   maybeMigrateBudget();
+  maybeShowInstall();
 }
 function renderTop(){
   const h = today.getHours();
@@ -2995,6 +3011,52 @@ function syncLabel(){
   const onScroll = ()=>document.body.classList.toggle("scrolled", window.scrollY > 4);
   if (window.ResizeObserver) new ResizeObserver(size).observe(tb); size();
   window.addEventListener("scroll", onScroll, { passive:true }); onScroll(); }
+/* ---------- install prompt ----------
+   Android/desktop Chrome: keep the browser's install event and offer it from our own card.
+   iPhone/iPad: there is no install event, so the card opens short Add-to-Home-Screen steps. */
+var installEvt = null;
+function inStandalone(){ return matchMedia("(display-mode: standalone)").matches || navigator.standalone === true; }
+function isIOS(){ return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform==="MacIntel" && navigator.maxTouchPoints > 1); }
+function isMobile(){ return isIOS() || /android|mobile/i.test(navigator.userAgent); }
+window.addEventListener("beforeinstallprompt", e=>{ e.preventDefault(); installEvt = e; maybeShowInstall(); });
+window.addEventListener("appinstalled", ()=>{ installEvt = null; hideInstall(); lsSet("kas-installed","1"); toast("Kas Keluarga terpasang di HP"); });
+function hideInstall(){ const c = document.getElementById("instCard"); if (c){ c.hidden = true; c.innerHTML = ""; } }
+function canInstall(){ return !inStandalone() && (installEvt || isMobile()); }
+function maybeShowInstall(){
+  const ib = document.getElementById("installBtn"); if (ib) ib.hidden = inStandalone();
+  const card = document.getElementById("instCard"); if (!card) return;
+  const later = +(lsGet("kas-install-later")||0);
+  const show = canInstall() && isMobile() && !lsGet("kas-installed") && Date.now() >= later;
+  if (!show){ hideInstall(); return; }
+  if (!card.hidden) return;
+  card.innerHTML = `<div class="instbar" role="region" aria-label="Pasang aplikasi"><img src="icons/icon-192-v2.png" alt="">
+    <span><b>Pasang Kas Keluarga</b><small>Buka dari layar utama, bisa offline.</small></span>
+    <button type="button" class="btn-s" id="instGo">Pasang</button><button type="button" class="x" id="instX" aria-label="Nanti saja">${ico("x")}</button></div>`;
+  card.hidden = false;
+  $("instGo").onclick = ()=>doInstall();
+  $("instX").onclick = ()=>{ hideInstall(); lsSet("kas-install-later", String(Date.now() + 7*864e5)); };
+}
+async function doInstall(){
+  if (installEvt){ const e = installEvt; installEvt = null; e.prompt();
+    try { const r = await e.userChoice; if (r && r.outcome === "accepted") hideInstall(); } catch(_){}
+    return; }
+  const share = `<svg class="i" viewBox="0 0 24 24"><path d="M12 15V3M8 7l4-4 4 4"/><path d="M5 11v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8"/></svg>`;
+  const plusBox = `<svg class="i" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="M12 8v8M8 12h8"/></svg>`;
+  if (isIOS()) openSheet("Pasang di iPhone", `
+    <ol class="isteps">
+      <li><span>Ketuk tombol <b>Bagikan</b> ${share} di Safari</span></li>
+      <li><span>Gulir lalu pilih <b>Tambah ke Layar Utama</b> ${plusBox}</span></li>
+      <li><span>Ketuk <b>Tambah</b> di pojok kanan atas</span></li>
+    </ol>
+    <div class="advice">Kalau tidak ada pilihannya, buka alamat aplikasi ini di <b>Safari</b> terlebih dahulu.</div>`, null);
+  else openSheet("Pasang di HP", `
+    <ol class="isteps">
+      <li><span>Ketuk menu <b>⋮</b> di pojok kanan atas Chrome</span></li>
+      <li><span>Pilih <b>Instal aplikasi</b> atau <b>Tambahkan ke layar utama</b></span></li>
+      <li><span>Ketuk <b>Instal</b></span></li>
+    </ol>`, null);
+}
+$("installBtn").onclick = doInstall;
 const h0 = (location.hash||"").slice(1);
 go(["beranda","transaksi","anggaran","tabungan","profil"].includes(h0) ? h0 : "beranda");
 (function boot(){

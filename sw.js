@@ -1,5 +1,5 @@
 /* Kas Keluarga service worker: app shell offline, data offline handled by Firestore itself. */
-const VERSION = "kas-v31";
+const VERSION = "kas-v32";
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./firebase-config.js",
   "./icons/icon-192-v2.png", "./icons/icon-512-v2.png", "./icons/apple-touch-icon-v2.png"];
 const CDN = ["fonts.googleapis.com", "fonts.gstatic.com", "www.gstatic.com"];
